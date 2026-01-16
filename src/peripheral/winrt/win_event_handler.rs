@@ -88,7 +88,7 @@ impl WinEventHandler {
 
                 let subscribed_clients: IVectorView<GattSubscribedClient> =
                     characteristic.SubscribedClients().unwrap();
-                    
+
                 let new_clients: Vec<String> = subscribed_clients
                     .into_iter()
                     .map(|client| device_id_from_session(client.Session().unwrap()))
@@ -259,10 +259,6 @@ impl WinEventHandler {
                                 .unwrap();
                             return;
                         }
-
-                        request
-                            .RespondWithProtocolError(GattProtocolError::UnlikelyError().unwrap())
-                            .unwrap();
                     }
                 });
 
