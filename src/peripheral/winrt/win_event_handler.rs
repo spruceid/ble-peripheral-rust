@@ -250,6 +250,10 @@ impl WinEventHandler {
                         }
 
                         if let Ok(result) = resp_rx.await {
+                            log::info!(
+                                "Sending resposne for characteristic: {:?}",
+                                characteristic.Uuid().unwrap()
+                            );
                             if result.response == RequestResponse::Success {
                                 request.Respond().unwrap();
                                 return;
@@ -257,7 +261,6 @@ impl WinEventHandler {
                             request
                                 .RespondWithProtocolError(result.response.to_gatt_protocol_error())
                                 .unwrap();
-                            return;
                         }
                     }
                 });
