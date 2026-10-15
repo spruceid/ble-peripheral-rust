@@ -12,7 +12,6 @@ use objc2_core_bluetooth::{
     CBPeripheralManager,
 };
 use objc2_foundation::{NSArray, NSData, NSDictionary, NSString};
-use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::thread;
@@ -47,24 +46,22 @@ pub(crate) enum ManagerEvent {
     },
 }
 
-static PERIPHERAL_THREAD: OnceCell<()> = OnceCell::new();
-
-// Handle Peripheral Manager and all communication in a separate thread
+// Handle Peripheral Manager and all communication in a separate thread, one per `Peripheral`.
+// The thread ends when the `Peripheral` (the only sender) is dropped.
 pub fn run_peripheral_thread(sender: Sender<PeripheralEvent>, listener: Receiver<ManagerEvent>) {
-    PERIPHERAL_THREAD.get_or_init(|| {
-        thread::spawn(move || {
-            let runtime = runtime::Builder::new_current_thread().enable_time().build();
-            if runtime.is_err() {
+    thread::spawn(move || {
+        let runtime = match runtime::Builder::new_current_thread().enable_time().build() {
+            Ok(runtime) => runtime,
+            Err(_) => {
                 log::error!("Failed to create runtime");
                 return;
             }
-            runtime.unwrap().block_on(async move {
-                let mut peripheral_manager = PeripheralManager::new(sender, listener);
-                loop {
-                    peripheral_manager.handle_event().await;
-                }
-            })
-        });
+        };
+        runtime.block_on(async move {
+            let mut peripheral_manager = PeripheralManager::new(sender, listener);
+            while peripheral_manager.handle_event().await {}
+            peripheral_manager.shutdown();
+        })
     });
 }
 
@@ -96,8 +93,12 @@ impl PeripheralManager {
         }
     }
 
-    async fn handle_event(&mut self) {
-        if let Some(event) = self.manager_event.recv().await {
+    /// Returns `false` once every sender is gone.
+    async fn handle_event(&mut self) -> bool {
+        let Some(event) = self.manager_event.recv().await else {
+            return false;
+        };
+        {
             let _ = match event {
                 ManagerEvent::IsPowered { responder } => {
                     let _ = responder.send(Ok(self.is_powered()));
@@ -127,6 +128,17 @@ impl PeripheralManager {
                 }
             };
         }
+        true
+    }
+
+    /// Stops advertising and removes the services, so a dropped `Peripheral` leaves nothing
+    /// discoverable and a new one starts from an empty GATT database.
+    fn shutdown(&mut self) {
+        unsafe {
+            self.cb_peripheral_manager.stopAdvertising();
+            self.cb_peripheral_manager.removeAllServices();
+        }
+        self.cached_characteristics.clear();
     }
 
     fn is_powered(self: &Self) -> bool {
