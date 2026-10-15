@@ -88,7 +88,7 @@ impl WinEventHandler {
 
                 let subscribed_clients: IVectorView<GattSubscribedClient> =
                     characteristic.SubscribedClients().unwrap();
-                    
+
                 let new_clients: Vec<String> = subscribed_clients
                     .into_iter()
                     .map(|client| device_id_from_session(client.Session().unwrap()))
@@ -250,6 +250,10 @@ impl WinEventHandler {
                         }
 
                         if let Ok(result) = resp_rx.await {
+                            log::info!(
+                                "Sending resposne for characteristic: {:?}",
+                                characteristic.Uuid().unwrap()
+                            );
                             if result.response == RequestResponse::Success {
                                 request.Respond().unwrap();
                                 return;
@@ -257,12 +261,7 @@ impl WinEventHandler {
                             request
                                 .RespondWithProtocolError(result.response.to_gatt_protocol_error())
                                 .unwrap();
-                            return;
                         }
-
-                        request
-                            .RespondWithProtocolError(GattProtocolError::UnlikelyError().unwrap())
-                            .unwrap();
                     }
                 });
 
